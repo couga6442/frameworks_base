@@ -34,9 +34,7 @@
 #include "OpenGLRenderer.h"
 #include "DisplayListRenderer.h"
 #include "Vector.h"
-#ifdef QCOM_HARDWARE
-#include "tilerenderer.h"
-#endif
+
 namespace android {
 namespace uirenderer {
 
@@ -166,13 +164,6 @@ void OpenGLRenderer::setViewport(int width, int height) {
     glEnableVertexAttribArray(Program::kBindingPosition);
 }
 
-#ifdef QCOM_HARDWARE
-void OpenGLRenderer::getViewport(int &width, int &height) {
-    width = mWidth;
-    height = mHeight;
-}
-#endif
-
 int OpenGLRenderer::prepare(bool opaque) {
     return prepareDirty(0.0f, 0.0f, mWidth, mHeight, opaque);
 }
@@ -264,27 +255,12 @@ void OpenGLRenderer::resume() {
     glViewport(0, 0, snapshot->viewport.getWidth(), snapshot->viewport.getHeight());
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
-#ifdef QCOM_HARDWARE
-    GLuint previousFbo;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*) &previousFbo);
-#endif
-
     glEnable(GL_SCISSOR_TEST);
     mCaches.resetScissor();
     dirtyClip();
 
     mCaches.activeTexture(0);
-#ifdef QCOM_HARDWARE
-    TILERENDERING_END(previousFbo, snapshot->fbo);
-#endif
     glBindFramebuffer(GL_FRAMEBUFFER, snapshot->fbo);
-#ifdef QCOM_HARDWARE
-    TILERENDERING_START(snapshot->fbo, previousFbo, 0, 0,
-                        snapshot->viewport.getWidth(),
-                        snapshot->viewport.getHeight(),
-                        snapshot->viewport.getWidth(),
-                        snapshot->viewport.getHeight(), true);
-#endif
 
     mCaches.blend = true;
     glEnable(GL_BLEND);
@@ -652,9 +628,6 @@ bool OpenGLRenderer::createFboLayer(Layer* layer, Rect& bounds, sp<Snapshot> sna
     snapshot->orthoMatrix.load(mOrthoMatrix);
 
     // Bind texture to FBO
-#ifdef QCOM_HARDWARE
-    TILERENDERING_END(previousFbo, layer->getFbo());
-#endif
     glBindFramebuffer(GL_FRAMEBUFFER, layer->getFbo());
     layer->bindTexture();
 
@@ -671,22 +644,15 @@ bool OpenGLRenderer::createFboLayer(Layer* layer, Rect& bounds, sp<Snapshot> sna
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         ALOGE("Framebuffer incomplete (GL error code 0x%x)", status);
+
         glBindFramebuffer(GL_FRAMEBUFFER, previousFbo);
-#ifdef QCOM_HARDWARE
-        TILERENDERING_START(previousFbo, layer->getFbo(), true);
-#endif
         layer->deleteTexture();
         mCaches.fboCache.put(layer->getFbo());
+
         delete layer;
 
         return false;
     }
-#endif
-
-#ifdef QCOM_HARDWARE
-    TILERENDERING_START(layer->getFbo(), previousFbo, clip.left, clip.bottom - bounds.getHeight(),
-                      bounds.getWidth() + clip.left, clip.bottom,
-                      bounds.getWidth(), bounds.getHeight());
 #endif
 
     // Clear the FBO, expand the clear region by 1 to get nice bilinear filtering
@@ -715,17 +681,11 @@ void OpenGLRenderer::composeLayer(sp<Snapshot> current, sp<Snapshot> previous) {
     const bool fboLayer = current->flags & Snapshot::kFlagIsFboLayer;
 
     if (fboLayer) {
-#ifdef QCOM_HARDWARE
-        TILERENDERING_END(current->fbo, previous->fbo);
-#endif
         // Detach the texture from the FBO
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 
         // Unbind current FBO and restore previous one
         glBindFramebuffer(GL_FRAMEBUFFER, previous->fbo);
-#ifdef QCOM_HARDWARE
-        TILERENDERING_START(previous->fbo, current->fbo, true);
-#endif
     }
 
     Layer* layer = current->layer;
@@ -766,9 +726,6 @@ void OpenGLRenderer::composeLayer(sp<Snapshot> current, sp<Snapshot> previous) {
 
         // Put the FBO name back in the cache, if it doesn't fit, it will be destroyed
         mCaches.fboCache.put(current->fbo);
-#ifdef QCOM_HARDWARE
-        TILERENDERING_CLEARCACHE(current->fbo);
-#endif
         layer->setFbo(0);
     }
 
